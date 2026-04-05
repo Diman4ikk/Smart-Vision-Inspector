@@ -1,0 +1,9 @@
+20:24:09 | cell phone | 0.61 | full_202409_cell phone.jpg | crop_202409_cell phone.jpg
+20:24:19 | cell phone | 0.87 | full_202419_cell phone.jpg | crop_202419_cell phone.jpg
+19:46:57 | cell phone | 0.71 | full_194702_cell phone.jpg | crop_194702_cell phone.jpg
+19:48:56 | cell phone | 0.89 | full_194856_cell phone.jpg | crop_194856_cell phone.jpg
+19:49:30 | toilet | 0.61 | full_194930_toilet.jpg | crop_194930_toilet.jpg
+19:52:42 | cell phone | 0.92 | full_195243_cell phone.jpg | crop_195243_cell phone.jpg
+19:52:55 | cell phone | 0.62 | full_195256_cell phone.jpg | crop_195256_cell phone.jpg
+19:54:47 | cell phone | 0.66 | full_195448_cell phone.jpg | crop_195448_cell phone.jpg
+19:57:51 | remote | 0.85 | full_195752_remote.jpg | crop_195752_remote.jpg

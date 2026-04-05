@@ -2,12 +2,14 @@ from fastapi import FastAPI, UploadFile, File, Form
 import os
 import shutil
 from datetime import datetime
-
+from tg_bot import TelegramAlert
 app = FastAPI()
 
 # Создаем папку для фото, если нет
 os.makedirs("incidents_media", exist_ok=True)
-
+TOKEN = "8332981935:AAFNlynjlvX62QduOMAihK0BfWfMowPHVaM"
+CHAT_ID = "833032217"
+bot = TelegramAlert(TOKEN, CHAT_ID)
 @app.post("/log_incident")
 async def log_incident(
     object_type: str = Form(...),
@@ -16,6 +18,15 @@ async def log_incident(
     file: UploadFile = File(...),
     crop: UploadFile = File(...)
 ):
+    crop_bytes = await crop.read()
+    await crop.seek(0)
+    #  Формируем текст
+    message = f"🚨 ОБНАРУЖЕН ОБЪЕКТ: {object_type.upper()}\n"
+    message += f"📊 Уверенность: {confidence}\n"
+    message += f"⏰ Время: {timestamp}"
+
+    #  Шлем в Telegram
+    bot.send_photo(crop_bytes, caption=message)
     # 1. Генерируем уникальное время для имен файлов
     t = datetime.now().strftime('%H%M%S')
     

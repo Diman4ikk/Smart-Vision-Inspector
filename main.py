@@ -5,6 +5,7 @@ from datetime import datetime
 from camera import Camera
 from vision import ObjectInspectorV8 
 import numpy as np
+from tracker import CentroidTracker
 
 # Глобальные переменные для работы с мышью
 polygon_points = []      
@@ -41,7 +42,8 @@ def main():
     window_name = "Smart Inspector V8"
     cv2.namedWindow(window_name)
     cv2.setMouseCallback(window_name, draw_polygon)
-    
+    ct = CentroidTracker(max_disappeared=30)
+    sent_ids = set()
     try:
         while True:
             ret, frame = cam.get_frame()
@@ -50,43 +52,57 @@ def main():
             detections = detector.detect(frame, 0.6)
             current_time = time.time()
             incident_found = False
+            incident_box = None
             detected_label = ""
             detected_conf = 0
             
             # Координаты объекта для кропа (выносим выше, чтобы были доступны)
             ox, oy, ow, oh = 0, 0, 0, 0
-
+            rects = [obj["box"] for obj in detections] # Собираем все рамки
+            tracked_objects = ct.update(rects) # Обновляем трекер
             # 1. Анализ объектов
             for obj in detections:
                 ox, oy, ow, oh = obj["box"]
                 label = obj["class_name"]
                 conf = obj["confidence"]
-                
                 color = (0, 255, 0) if label == "person" else (255, 0, 0)
                 cv2.rectangle(frame, (ox, oy), (ox + ow, oy + oh), color, 2)
                 cv2.putText(frame, f"{label}", (ox, oy - 10), 1, 1, color, 2)
 
                 # Проверка полигона
                 cx, cy = ox + ow // 2, oy + oh // 2
+                obj_id=None
+                    
+                for oid , centroid in tracked_objects.items():
+                    if abs(cx-centroid[0])< 5 and abs(cy-centroid[1]) <5:
+                        obj_id=oid
+                        break   
+
+                cv2.putText(frame, f"ID: {obj_id} {label}", (ox, oy - 10), 
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
                 if is_polygon_closed and current_polygon is not None:
                     # pointPolygonTest: возвращает >= 0 если внутри
                     if cv2.pointPolygonTest(current_polygon, (cx, cy), False) >= 0:
-                        if label != "person":
+                        if label != "person" and obj_id not in sent_ids:
                             incident_found = True
                             detected_label = label
                             detected_conf = conf
+                            incident_box = (ox, oy, ow, oh)
+                            sent_ids.add(obj_id) # СРАЗУ помечаем как отправленный
+                            print(f"🎯 Впервые вижу объект ID {obj_id} в зоне!")
 
             # 2. Логика отправки
-            if incident_found and (current_time - last_log_time > 3):
+            if incident_found and incident_box and (current_time - last_log_time > 3):
+                ix, iy, iw, ih = incident_box
                 padding = 20
                 h_img, w_img, _ = frame.shape
-                y1, y2 = max(0, oy-padding), min(h_img, oy+oh+padding)
-                x1, x2 = max(0, ox-padding), min(w_img, ox+ow+padding)
+                y1, y2 = max(0, iy-padding), min(h_img, iy+ih+padding)
+                x1, x2 = max(0, ix-padding), min(w_img, ix+iw+padding)
 
                 crop_img = frame[y1:y2, x1:x2].copy() # .copy() чтобы не портить основной кадр
                 
                 # Рисуем на кропе
-                l_ox, l_oy = ox - x1, oy - y1
+                l_ox, l_oy = ix - x1, iy - y1
                 cv2.rectangle(crop_img, (l_ox, l_oy), (l_ox + ow, l_oy + oh), (0, 0, 255), 2)
                 
                 _, img_encoded = cv2.imencode('.jpg', frame)
