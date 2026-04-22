@@ -6,12 +6,12 @@ from camera import Camera
 from vision import ObjectInspectorV8 
 import numpy as np
 from tracker import CentroidTracker
-
+from collections import deque
 # Глобальные переменные для работы с мышью
 polygon_points = []      
 is_polygon_closed = False 
 current_polygon = None   
-
+defect_detector=ObjectInspectorV8("my_defects_model.pt")
 def draw_polygon(event, x, y, flags, parameters):
     global polygon_points, is_polygon_closed, current_polygon
     
@@ -44,6 +44,7 @@ def main():
     cv2.setMouseCallback(window_name, draw_polygon)
     ct = CentroidTracker(max_disappeared=30)
     sent_ids = set()
+    trajectors={}
     try:
         while True:
             ret, frame = cam.get_frame()
@@ -60,6 +61,24 @@ def main():
             ox, oy, ow, oh = 0, 0, 0, 0
             rects = [obj["box"] for obj in detections] # Собираем все рамки
             tracked_objects = ct.update(rects) # Обновляем трекер
+            #Очистка памяти: удаляем хвосты для исчезнувших ID
+            # Сравниваем ключи из словаря хвостов с активными ID в трекере
+            for tid, centroid in tracked_objects.items():
+                # 1. Если ID новый, создаем для него историю
+                if tid not in trajectors:
+                    trajectors[tid] = deque(maxlen=30)
+                
+                # 2. Добавляем текущую точку
+                trajectors[tid].append(tuple(centroid))
+
+                # 3. Рисуем хвост 
+                # Мы рисуем хвост именно для текущего tid
+                for i in range(1, len(trajectors[tid])):
+                    if trajectors[tid][i-1] is None or trajectors[tid][i] is None:
+                        continue
+            
+                    thickness = int(np.sqrt(30 / float(i + 1)) * 2)
+                    cv2.line(frame, trajectors[tid][i - 1], trajectors[tid][i], (0, 255, 255), thickness)
             # 1. Анализ объектов
             for obj in detections:
                 ox, oy, ow, oh = obj["box"]
@@ -99,35 +118,44 @@ def main():
                 y1, y2 = max(0, iy-padding), min(h_img, iy+ih+padding)
                 x1, x2 = max(0, ix-padding), min(w_img, ix+iw+padding)
 
-                crop_img = frame[y1:y2, x1:x2].copy() # .copy() чтобы не портить основной кадр
+                crop_img = frame[y1:y2, x1:x2].copy()
                 
-                # Рисуем на кропе
-                l_ox, l_oy = ix - x1, iy - y1
-                cv2.rectangle(crop_img, (l_ox, l_oy), (l_ox + ow, l_oy + oh), (0, 0, 255), 2)
+                # Подготавливаем базовый словарь данных ПЕРЕД анализом дефектов
+                data = {
+                    "object_type": detected_label, 
+                    "confidence": f"{detected_conf:.2f}",
+                    "timestamp": datetime.now().strftime("%H:%M:%S"),
+                    "has_defect": False,  # По умолчанию дефектов нет
+                    "defect_type": "none"
+                }
+
+                # Запускаем "Экспертную" модель на кропе
+                defects = defect_detector.detect(crop_img, conf=0.5)
                 
+                if len(defects) > 0:
+                    print(f"🚨 ВНИМАНИЕ: На объекте {detected_label} найден дефект!")
+                    data["has_defect"] = True
+                    data["defect_type"] = defects[0]["class_name"]
+                    
+                    # Опционально: рисуем рамку дефекта на кропе для сервера
+                    dx, dy, dw, dh = defects[0]["box"]
+                    cv2.rectangle(crop_img, (dx, dy), (dx + dw, dy + dh), (0, 0, 255), 2)
+
+                # Кодируем изображения
                 _, img_encoded = cv2.imencode('.jpg', frame)
                 _, crop_encoded = cv2.imencode('.jpg', crop_img)
                 
                 try:
-                    # ВАЖНО: Добавляем кортежи с именами файлов
                     files = {
                         'file': ('full.jpg', img_encoded.tobytes(), 'image/jpeg'),
                         'crop': ('crop.jpg', crop_encoded.tobytes(), 'image/jpeg')
-                    }
-                    data = {
-                        "object_type": detected_label, 
-                        "confidence": f"{detected_conf:.2f}",
-                        "timestamp": datetime.now().strftime("%H:%M:%S")
                     }
                     
                     response = requests.post("http://127.0.0.1:8000/log_incident", data=data, files=files, timeout=2)
                     
                     if response.status_code == 200:
                         last_log_time = current_time
-                        print(f"🚀 Успешно отправлено: {detected_label}")
-                    else:
-                        print(f"⚠️ Сервер ответил кодом: {response.status_code}")
-                
+                        print(f"🚀 Успешно отправлено: {detected_label} (Дефект: {data['has_defect']})")
                 except Exception as e:
                     print(f"❌ Ошибка при отправке: {e}")
 

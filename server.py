@@ -8,7 +8,7 @@ app = FastAPI()
 # Создаем папку для фото, если нет
 os.makedirs("incidents_media", exist_ok=True)
 TOKEN = "8332981935:AAFNlynjlvX62QduOMAihK0BfWfMowPHVaM"
-CHAT_ID = "833032217"
+CHAT_ID = "1197446245"
 bot = TelegramAlert(TOKEN, CHAT_ID)
 @app.post("/log_incident")
 async def log_incident(
